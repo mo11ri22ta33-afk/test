@@ -1,0 +1,35 @@
+VLAN 作成（必要なら）
+vlan 220
+name VLAN220
+exit
+
+単一インターフェースに trunk を追加する例
+interface GigabitEthernet1/0/1
+description trunk for VLAN220
+switchport mode trunk
+switchport trunk allowed vlan add 220
+no shutdown
+exit
+
+複数ポートに一括で適用する例（例: 1/0/1〜1/0/4）
+interface range GigabitEthernet1/0/1 - 1/0/4
+switchport mode trunk
+switchport trunk allowed vlan add 220
+no shutdown
+exit
+
+既に trunk で全 VLAN 許可されている場合（簡略）
+interface GigabitEthernet1/0/1
+switchport mode trunk
+exit
+
+注意点
+
+既存のポートが access モードなら trunk 化で接続先の通信に影響する可能性があります。事前に機器側設定（サーバ/上位スイッチ）を確認してください。
+
+プラットフォームにより trunk の encapsulation 設定（switchport trunk encapsulation dot1q）が必要な場合があります（古いスイッチ等）。
+
+設定保存
+write memory
+または
+copy running-config startup-config

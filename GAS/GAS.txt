@@ -1,0 +1,501 @@
+/**
+ * Drive から画像と下書きテキストを列挙して取得するモジュール
+ * - スプレッドシートの A2 セルにフォルダIDを置く想定
+ * - 画像は拡張子で判定（jpg|jpeg|png|webp）
+ * - テキストは .txt/.md を取得して内容を読み取る
+ * - 返り値は配列: { type: 'image'|'text'|'other', name, id, mime, content? }
+ */
+
+function getFolderFromSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getActiveSheet();
+  var raw = sheet.getRange('A2').getValue();
+  if (!raw) {
+    throw new Error('フォルダIDまたはフォルダ名がシートの A2 に設定されていません');
+  }
+  var v = String(raw).trim();
+
+  // 1) URL から ID を抜く（/folders/ID や id= など）
+  var m = v.match(/[-\w]{20,}/);
+  if (m) {
+    var candidate = m[0];
+    try {
+      return DriveApp.getFolderById(candidate);
+    } catch (e) {
+      // 続行してフォルダ名検索へ
+    }
+  }
+
+  // 2) そのまま ID として試す
+  try {
+    return DriveApp.getFolderById(v);
+  } catch (e) {
+    // 続行
+  }
+
+  // 3) フォルダ名として検索して最初に見つかったものを返す
+  try {
+    var folders = DriveApp.getFoldersByName(v);
+    if (folders.hasNext()) return folders.next();
+  } catch (e) {
+    // 最後にエラーを投げる
+  }
+
+  throw new Error('フォルダが見つかりません（A2: ' + v + '）。A2 にはフォルダのID、またはフォルダURL、または正確なフォルダ名を設定してください。');
+}
+
+function listMediaAndTexts(folder) {
+  var files = folder.getFiles();
+  var items = [];
+  while (files.hasNext()) {
+    var file = files.next();
+    var name = file.getName();
+    var mime = file.getMimeType();
+    var id = file.getId();
+
+    if (name.match(/\.(jpg|jpeg|png|webp)$/i)) {
+      var lastUpdated = file.getLastUpdated ? file.getLastUpdated() : null;
+      items.push({ type: 'image', name: name, id: id, mime: mime, lastUpdated: lastUpdated });
+      continue;
+    }
+
+    if (name.match(/\.(txt|md)$/i) || mime === 'text/plain') {
+      var content = '';
+      try {
+        content = file.getBlob().getDataAsString('utf-8');
+      } catch (e) {
+        content = file.getBlob().getDataAsString();
+      }
+      items.push({ type: 'text', name: name, id: id, mime: mime, content: content });
+      continue;
+    }
+
+    items.push({ type: 'other', name: name, id: id, mime: mime });
+  }
+  return items;
+}
+
+/** 指定した items から最新画像をサムネイルとして選定して返す（なければ null） */
+function selectLatestImage(items) {
+  var images = items.filter(function(it) { return it.type === 'image'; });
+  if (images.length === 0) return null;
+  images.sort(function(a, b) {
+    var at = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+    var bt = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+    return bt - at;
+  });
+  return images[0];
+}
+
+/**
+ * 開発用エントリポイント: フォルダを読み取り、ログに出力し、簡易 manifest をフォルダへ書き出す
+ */
+function buildFolderManifest() {
+  var folder = getFolderFromSheet();
+  var items = listMediaAndTexts(folder);
+  Logger.log('Found items: ' + items.length);
+  items.forEach(function(it) { Logger.log(it.type + ': ' + it.name); });
+
+  // サムネイル選定（最新の画像をサムネイルとする）
+  var thumbnail = selectLatestImage(items);
+  if (thumbnail) {
+    Logger.log('Selected thumbnail: ' + thumbnail.name);
+  } else {
+    Logger.log('No thumbnail found');
+  }
+
+  // デバッグ用に manifest を作成（GAS 権限でフォルダに書き込み）
+  try {
+    var manifestObj = {
+      thumbnail: thumbnail ? { name: thumbnail.name, id: thumbnail.id } : null,
+      items: items.map(function(it){ return { type: it.type, name: it.name, id: it.id, mime: it.mime, lastUpdated: it.lastUpdated }; })
+    };
+    var manifest = JSON.stringify(manifestObj, null, 2);
+    var manifestBlob = Utilities.newBlob(manifest, 'application/json', folder.getName() + '_manifest.json');
+    folder.createFile(manifestBlob);
+  } catch (e) {
+    Logger.log('manifest 作成中にエラー: ' + e);
+  }
+
+  return items;
+}
+
+/** 既存の generateTxtFromSheet を残したい場合はラッパーで呼ぶ等にする */
+function generateTxtFromSheet() {
+  // 互換性のために従来の処理をここで呼ぶことができます。
+  // まずは manifest を作って確認します。
+  var items = buildFolderManifest();
+  // TODO: ここから Gemini 呼び出しや WP 連携へつなげる
+  return items;
+}
+
+// -----------------------------
+// Gemini API 呼び出しラッパー
+// -----------------------------
+function getGeminiConfig() {
+  var p = PropertiesService.getScriptProperties();
+  return {
+    apiKey: p.getProperty('GEMINI_API_KEY'),
+    apiUrl: p.getProperty('GEMINI_API_URL'),
+    model: p.getProperty('GEMINI_MODEL') || 'gemini',
+    // 一言キャプション用の低トークン設定
+    captionMaxTokens: Number(p.getProperty('GEMINI_CAPTION_MAXTOKENS') || 60),
+    articleMaxTokens: Number(p.getProperty('GEMINI_ARTICLE_MAXTOKENS') || 800)
+  };
+}
+
+function callGeminiRaw(promptText, options) {
+  options = options || {};
+  var cfg = getGeminiConfig();
+  var apiUrl = cfg.apiUrl;
+  if (!apiUrl) throw new Error('Script Properties に GEMINI_API_URL を設定してください');
+  var apiKey = cfg.apiKey;
+
+  var body = {
+    prompt: promptText,
+    model: options.model || cfg.model,
+    max_tokens: options.maxTokens || cfg.captionMaxTokens,
+    temperature: typeof options.temperature !== 'undefined' ? options.temperature : 0.2
+  };
+
+  var headers = {};
+  if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+
+  var payload = JSON.stringify(body);
+  var params = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: payload,
+    muteHttpExceptions: true,
+    headers: headers
+  };
+
+  var resp = UrlFetchApp.fetch(apiUrl, params);
+  var code = resp.getResponseCode();
+  var text = resp.getContentText();
+  if (code < 200 || code >= 300) {
+    throw new Error('Gemini API エラー: ' + code + ' - ' + text);
+  }
+  return text;
+}
+
+function callGeminiForJson(promptText, options) {
+  var raw = callGeminiRaw(promptText, options);
+  // 期待される出力は純粋な JSON 文字列
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    // ログ出力して生テキストを返す
+    Logger.log('callGeminiForJson: JSON parse error, raw=' + raw);
+    return { raw: raw };
+  }
+}
+
+// -----------------------------
+// 画像とテキストの紐付け（簡易）
+// - 画像名と同じベース名のテキストファイルがあれば紐付け
+// - なければ最初に見つかった text を使用
+// -----------------------------
+function pairImagesWithTexts(items) {
+  var images = items.filter(function(it){ return it.type === 'image'; });
+  var texts = items.filter(function(it){ return it.type === 'text'; });
+  var pairs = [];
+
+  images.forEach(function(img){
+    var base = img.name.replace(/\.[^.]+$/, '');
+    var matched = texts.find(function(t){ return t.name.replace(/\.[^.]+$/, '') === base; });
+    if (matched) {
+      pairs.push({ image: img, text: matched.content });
+    } else if (texts.length > 0) {
+      pairs.push({ image: img, text: texts[0].content });
+    } else {
+      pairs.push({ image: img, text: '' });
+    }
+  });
+  return pairs;
+}
+
+// -----------------------------
+// 店舗情報取得: スプレッドシート内の '店舗情報' シートから folderName をキーに検索
+// シート構成（想定）: A: folderName/B:店舗名/C:住所/D:営業時間/E:定休日/F:電話/G:公式サイト
+// -----------------------------
+function getStoreInfoFromSheet(folderName) {
+  if (!folderName) return null;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('店舗情報') || ss.getSheetByName('StoreDirectory');
+  if (!sh) return null;
+  var data = sh.getDataRange().getValues();
+  // assume header row at row 1; iterate from row 2
+  // try to parse folderName like: 店名_地域名_県名
+  var parts = String(folderName).split(/[_\s]+/).map(function(s){ return String(s||'').trim(); });
+  var storeCandidate = parts[0] || '';
+  var regionCandidate = parts[1] || '';
+  var prefectureCandidate = parts[2] || '';
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var key = String(row[0] || '').trim();
+    if (!key) continue;
+    // match priority: exact folderName, exact key==storeCandidate, partial contains
+    if (key === folderName || key === storeCandidate || key.indexOf(folderName) !== -1 || folderName.indexOf(key) !== -1 || key.indexOf(storeCandidate) !== -1) {
+      return {
+        key: key,
+        name: row[1] || '',
+        address: row[2] || '',
+        hours: row[3] || '',
+        closed: row[4] || '',
+        phone: row[5] || '',
+        website: row[6] || ''
+      };
+    }
+  }
+  // not found in sheet: return parsed suggestions from folder name so caller can still use them
+  return {
+    key: folderName,
+    name: storeCandidate,
+    region: regionCandidate,
+    prefecture: prefectureCandidate,
+    address: '',
+    hours: '',
+    closed: '',
+    phone: '',
+    website: ''
+  };
+}
+
+// utility: シートに店舗情報テンプレートを作る（初回手動登録用）
+function createStoreDirectoryTemplate() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var name = '店舗情報';
+  var sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  var headers = ['folderKey','storeName','address','hours','closed','phone','website'];
+  sh.clear();
+  sh.getRange(1,1,1,headers.length).setValues([headers]);
+  sh.getRange(2,1).setValue('例: 20241026_115917979.jpg');
+  sh.getRange(2,2).setValue('店舗名 例');
+  sh.getRange(2,3).setValue('住所 例');
+  return sh;
+}
+
+// デバッグ用: A2 から取得したフォルダ名と getStoreInfoFromSheet の結果をログ/アラートする
+function testGetStoreInfo() {
+  try {
+    var folder = getFolderFromSheet();
+    var folderName = folder.getName();
+    var si = getStoreInfoFromSheet(folderName);
+    Logger.log('testGetStoreInfo: folderName=' + folderName);
+    Logger.log('testGetStoreInfo: storeInfo=' + JSON.stringify(si));
+    try {
+      SpreadsheetApp.getUi().alert('folderName: ' + folderName + '\nstoreInfo: ' + JSON.stringify(si));
+    } catch (e) {
+      // UI が使えない場合は Logger のみ
+    }
+    return si;
+  } catch (err) {
+    Logger.log('testGetStoreInfo error: ' + err);
+    try { SpreadsheetApp.getUi().alert('testGetStoreInfo error: ' + err.toString()); } catch(e){}
+    return null;
+  }
+}
+
+// -----------------------------
+// 各画像ごとに短い一言キャプションを生成（低トークン）
+// 返り値: items に caption を追加した配列
+// -----------------------------
+function generateCaptionsForItems(items) {
+  var cfg = getGeminiConfig();
+  var pairs = pairImagesWithTexts(items);
+  pairs.forEach(function(p, idx){
+    var prompt = '以下の画像説明テキストに基づき、日本語で短い一言キャプション（1〜2文）と alt テキスト（短め）をJSONで返してください。' +
+      '\n---\n' + (p.text || '(説明なし)') + '\n---\n' +
+      '{"caption":"","alt":""} の形式で返してください。';
+    try {
+      var res = callGeminiForJson(prompt, { maxTokens: cfg.captionMaxTokens, temperature: 0.2 });
+      if (res && res.caption) {
+        p.image.caption = res.caption;
+        p.image.alt = res.alt || res.caption;
+      } else if (res.raw) {
+        // 生テキストをキャプションにフォールバック
+        p.image.caption = (typeof res.raw === 'string') ? res.raw.substring(0, 200) : '';
+        p.image.alt = p.image.caption;
+      }
+    } catch (e) {
+      Logger.log('キャプション生成エラー: ' + e);
+      p.image.caption = '';
+      p.image.alt = '';
+    }
+  });
+  return items;
+}
+
+// -----------------------------
+// 一言キャプションと下書きテキストを使って記事を生成
+// 返り値: JSON { title, lead, bodyHtml, imageAlts: [{name,alt,caption}], tags: [] }
+// -----------------------------
+function generateArticleFromDraft(draftText, items) {
+  var cfg = getGeminiConfig();
+  var imageEntries = items.filter(function(it){ return it.type==='image'; }).map(function(it){
+    return { name: it.name, caption: it.caption || '', alt: it.alt || '' };
+  });
+  // フォルダ名（= 想定される店舗名）を取得し、シートから店舗情報を探す（無ければ空オブジェクト）
+  var folderName = null;
+  try {
+    folderName = getFolderFromSheet().getName();
+  } catch (e) {
+    folderName = null;
+  }
+  var storeInfo = {};
+  try {
+    if (folderName) {
+      var si = getStoreInfoFromSheet(folderName);
+      if (si) storeInfo = si;
+    }
+  } catch (e) {
+    Logger.log('getStoreInfoFromSheet error: ' + e);
+  }
+
+  var prompt = 'あなたはブログ記事ライターです。以下の下書きと各画像の短いキャプション、そして店舗情報（あれば）を参照し、' +
+    'ブログ記事のタイトル（短め）、リード文（導入文、約2〜3文）、本文（適切な見出しを含むHTML形式）、' +
+    '各画像の alt テキスト、および店舗情報を JSON で返してください。出力は厳密な JSON としてください。\n\n' +
+    '下書き:\n' + draftText + '\n\n' +
+    '画像情報:\n' + JSON.stringify(imageEntries, null, 2) + '\n\n' +
+    '店舗情報:\n' + JSON.stringify(storeInfo, null, 2) + '\n\n' +
+    '期待する JSON フォーマットの例:\n' +
+    '{"title":"...","lead":"...","bodyHtml":"<p>..</p>","imageAlts":[{"name":"...","alt":"...","caption":"..."}],"storeInfo":{"name":"","address":"","hours":"","closed":"","phone":"","website":""},"tags":["tag1","tag2"]}';
+
+  try {
+    var res = callGeminiForJson(prompt, { maxTokens: cfg.articleMaxTokens, temperature: 0.3 });
+    return res;
+  } catch (e) {
+    Logger.log('記事生成エラー: ' + e);
+    return { error: e.toString() };
+  }
+}
+
+// テスト用: manifest をスプレッドシートに書き出す（手早く出力を確認できる）
+function exportManifestToSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getActiveSheet();
+  var items = buildFolderManifest();
+
+  // ここでは A13 から一覧を書き出す（ユーザーの既存データ A1:A12 を上書きしない）
+  sheet.getRange('A13:E10000').clearContent();
+  sheet.getRange(14,1).setValue('type');
+  sheet.getRange(14,2).setValue('name');
+  sheet.getRange(14,3).setValue('id');
+  sheet.getRange(14,4).setValue('mime');
+  sheet.getRange(14,5).setValue('caption');
+
+  for (var i = 0; i < items.length; i++) {
+    var r = 15 + i;
+    var it = items[i];
+    sheet.getRange(r,1).setValue(it.type);
+    sheet.getRange(r,2).setValue(it.name);
+    sheet.getRange(r,3).setValue(it.id);
+    sheet.getRange(r,4).setValue(it.mime);
+    if (it.type === 'image' && it.caption) {
+      sheet.getRange(r,5).setValue(it.caption);
+    }
+  }
+  var thumbnail = selectLatestImage(items);
+  // 状態表示は A13 に書き込む（A1:A12 は保持）
+  sheet.getRange(13,1).setValue('manifest generated');
+  sheet.getRange(13,2).setValue(thumbnail ? thumbnail.name : 'No thumbnail');
+  Logger.log('exportManifestToSheet: wrote ' + items.length + ' items to sheet.');
+  return items;
+}
+
+// -----------------------------
+// モック: Gemini を使わずに簡易キャプションを生成（無料で動作確認可能）
+// -----------------------------
+function generateMockCaptions(items) {
+  var pairs = pairImagesWithTexts(items);
+  pairs.forEach(function(p){
+    var caption = '';
+    if (p.text && p.text.trim().length > 0) {
+      caption = p.text.split(/\r?\n/)[0];
+      if (caption.length > 120) caption = caption.substring(0,120) + '...';
+    } else {
+      caption = '写真：' + p.image.name;
+    }
+    p.image.caption = caption;
+    p.image.alt = caption;
+  });
+  return items;
+}
+
+// モックパイプライン実行: manifest 取得 → モックキャプション生成 → シート/Drive に結果出力
+function runTestPipelineMock() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var folder = getFolderFromSheet();
+  var items = listMediaAndTexts(folder);
+
+  // モック生成
+  generateMockCaptions(items);
+
+  // シートへ書き込み（A13 状態, データは A15 以降を想定）
+  sheet.getRange(13,1).setValue('mock manifest generated');
+  var thumbnail = selectLatestImage(items);
+  sheet.getRange(13,2).setValue(thumbnail ? thumbnail.name : 'No thumbnail');
+
+  // 書き込みヘッダが無い場合は作る
+  sheet.getRange('A14:E14').setValues([['type','name','id','mime','caption']]);
+  for (var i = 0; i < items.length; i++) {
+    var r = 15 + i;
+    var it = items[i];
+    sheet.getRange(r,1).setValue(it.type);
+    sheet.getRange(r,2).setValue(it.name);
+    sheet.getRange(r,3).setValue(it.id);
+    sheet.getRange(r,4).setValue(it.mime);
+    if (it.type === 'image' && it.caption) sheet.getRange(r,5).setValue(it.caption);
+  }
+
+  // Drive に mock manifest を作成
+  try {
+    var manifestObj = {
+      thumbnail: thumbnail ? { name: thumbnail.name, id: thumbnail.id } : null,
+      items: items.map(function(it){ return { type: it.type, name: it.name, id: it.id, mime: it.mime, caption: it.caption || null }; })
+    };
+    var mockManifest = JSON.stringify(manifestObj, null, 2);
+    var mockBlob = Utilities.newBlob(mockManifest, 'application/json', folder.getName() + '_manifest_mock.json');
+    folder.createFile(mockBlob);
+  } catch (e) {
+    Logger.log('mock manifest 作成エラー: ' + e);
+  }
+
+  Logger.log('runTestPipelineMock: completed, wrote ' + items.length + ' items.');
+  return items;
+}
+
+// スプレッドシートのメニューから実行しやすくするための onOpen とラッパー
+function onOpen() {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.createMenu('GAS Tools')
+      .addItem('Run mock pipeline', 'runMockAndNotify')
+      .addToUi();
+  } catch (e) {
+    Logger.log('onOpen error: ' + e);
+  }
+}
+
+function runMockAndNotify() {
+  try {
+    var items = runTestPipelineMock();
+    // UI が利用できるコンテキストなら alert、そうでなければ Logger に出力
+    try {
+      var ui = SpreadsheetApp.getUi();
+      ui.alert('Mock pipeline completed. ' + (items ? items.length : 0) + ' items processed.');
+    } catch (uiErr) {
+      Logger.log('Mock pipeline completed. ' + (items ? items.length : 0) + ' items processed.');
+    }
+  } catch (e) {
+    try {
+      var uiErr = SpreadsheetApp.getUi();
+      uiErr.alert('Mock pipeline error: ' + e.toString());
+    } catch (uiErr2) {
+      Logger.log('Mock pipeline error: ' + e.toString());
+    }
+  }
+}
