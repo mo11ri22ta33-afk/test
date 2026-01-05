@@ -1,0 +1,5 @@
+{
+  "api_key": "dummy",
+  "endpoint_url": "https://jsonplaceholder.typicode.com/todos/1",
+  "timeout": 30
+}

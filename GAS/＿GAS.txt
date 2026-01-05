@@ -20,7 +20,9 @@ function getFolderFromSheet() {
   if (m) {
     var candidate = m[0];
     try {
-      return DriveApp.getFolderById(candidate);
+      var folder = DriveApp.getFolderById(candidate);
+      Logger.log('Folder found by ID: ' + folder.getName());
+      return folder;
     } catch (e) {
       // 続行してフォルダ名検索へ
     }
@@ -28,7 +30,9 @@ function getFolderFromSheet() {
 
   // 2) そのまま ID として試す
   try {
-    return DriveApp.getFolderById(v);
+    var folder = DriveApp.getFolderById(v);
+    Logger.log('Folder found by direct ID: ' + folder.getName());
+    return folder;
   } catch (e) {
     // 続行
   }
@@ -36,7 +40,11 @@ function getFolderFromSheet() {
   // 3) フォルダ名として検索して最初に見つかったものを返す
   try {
     var folders = DriveApp.getFoldersByName(v);
-    if (folders.hasNext()) return folders.next();
+    if (folders.hasNext()) {
+      var folder = folders.next();
+      Logger.log('Folder found by name: ' + folder.getName());
+      return folder;
+    }
   } catch (e) {
     // 最後にエラーを投げる
   }
@@ -94,7 +102,12 @@ function buildFolderManifest() {
   var folder = getFolderFromSheet();
   var items = listMediaAndTexts(folder);
   Logger.log('Found items: ' + items.length);
-  items.forEach(function(it) { Logger.log(it.type + ': ' + it.name); });
+  items.forEach(function(it) {
+    Logger.log(it.type + ': ' + it.name);
+    if (it.type === 'text') {
+      Logger.log('Text content: ' + it.content);
+    }
+  });
 
   // サムネイル選定（最新の画像をサムネイルとする）
   var thumbnail = selectLatestImage(items);
@@ -108,7 +121,7 @@ function buildFolderManifest() {
   try {
     var manifestObj = {
       thumbnail: thumbnail ? { name: thumbnail.name, id: thumbnail.id } : null,
-      items: items.map(function(it){ return { type: it.type, name: it.name, id: it.id, mime: it.mime, lastUpdated: it.lastUpdated }; })
+      items: items.map(function(it){ return { type: it.type, name: it.name, id: it.id, mime: it.mime, lastUpdated: it.lastUpdated, content: it.content || null }; })
     };
     var manifest = JSON.stringify(manifestObj, null, 2);
     var manifestBlob = Utilities.newBlob(manifest, 'application/json', folder.getName() + '_manifest.json');
@@ -358,6 +371,15 @@ function generateArticleFromDraft(draftText, items) {
   var prompt = 'あなたはブログ記事ライターです。以下の下書きと各画像の短いキャプション、そして店舗情報（あれば）を参照し、' +
     'ブログ記事のタイトル（短め）、リード文（導入文、約2〜3文）、本文（適切な見出しを含むHTML形式）、' +
     '各画像の alt テキスト、および店舗情報を JSON で返してください。出力は厳密な JSON としてください。\n\n' +
+    '店舗情報は、本文の冒頭または適切な場所に以下の形式で記載してください：\n' +
+    '■ 店舗情報\n' +
+    '住所：' + (storeInfo.address || '') + '\n' +
+    '営業時間：' + (storeInfo.hours || '') + '\n' +
+    '定休日：' + (storeInfo.closed || '') + '\n' +
+    '電話番号：' + (storeInfo.phone || '') + '\n' +
+    '公式サイト：' + (storeInfo.website || '') + '\n\n' +
+    '■ アクセス（地図）\n' +
+    '住所からGoogle Mapsへのリンク：https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(storeInfo.address || '') + '\n\n' +
     '下書き:\n' + draftText + '\n\n' +
     '画像情報:\n' + JSON.stringify(imageEntries, null, 2) + '\n\n' +
     '店舗情報:\n' + JSON.stringify(storeInfo, null, 2) + '\n\n' +
@@ -498,4 +520,54 @@ function runMockAndNotify() {
       Logger.log('Mock pipeline error: ' + e.toString());
     }
   }
+}
+
+// -----------------------------
+// テキストファイルに地域情報を記入する関数
+// - フォルダ名から地域情報を取得し、テキストファイルの先頭に追加
+// -----------------------------
+function appendRegionInfoToTexts(items, storeInfo) {
+  var texts = items.filter(function(it) { return it.type === 'text'; });
+  texts.forEach(function(textItem) {
+    var originalContent = textItem.content || '';
+    var regionInfo = '';
+    if (storeInfo && storeInfo.region) {
+      regionInfo = '地域: ' + storeInfo.region;
+      if (storeInfo.prefecture) regionInfo += ' (' + storeInfo.prefecture + ')';
+      regionInfo += '\n\n';
+    }
+    var newContent = regionInfo + originalContent;
+    try {
+      var file = DriveApp.getFileById(textItem.id);
+      file.setContent(newContent);
+      textItem.content = newContent; // items 配列も更新
+      Logger.log('地域情報を追加: ' + textItem.name);
+    } catch (e) {
+      Logger.log('テキスト更新エラー (' + textItem.name + '): ' + e);
+    }
+  });
+  return items;
+}
+
+// 地域情報記入付きのパイプライン実行例（モック版）
+function runPipelineWithRegionInfoMock() {
+  var folder = getFolderFromSheet();
+  var folderName = folder.getName();
+  var storeInfo = getStoreInfoFromSheet(folderName);
+  var items = listMediaAndTexts(folder);
+
+  // 地域情報をテキストに記入
+  appendRegionInfoToTexts(items, storeInfo);
+
+  // モックキャプション生成
+  generateMockCaptions(items);
+
+  // シートに書き出し
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getActiveSheet();
+  sheet.getRange(13,1).setValue('pipeline with region info completed');
+  // 必要に応じて他の書き出し処理
+
+  Logger.log('Pipeline with region info completed.');
+  return items;
 }
