@@ -1,0 +1,1 @@
+S3バケット: deff-clin-bucket, バージョニング無効

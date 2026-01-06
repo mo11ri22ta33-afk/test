@@ -1,0 +1,2 @@
+S3バケット: deff-clin-bucket, バージョニング有効
+S3バケット: deff-clin-bucket, バージョニング有効
