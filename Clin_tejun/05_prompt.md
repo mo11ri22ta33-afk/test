@@ -153,6 +153,30 @@ interface GigabitEthernet0/2
 interface GigabitEthernet0/3
  switchport access vlan 20
  switchport mode access
+!
+interface GigabitEthernet0/5
+ shutdown
+!
+interface GigabitEthernet0/6
+ shutdown
+!
+interface GigabitEthernet0/7
+ shutdown
+!
+interface GigabitEthernet0/8
+ shutdown
+!
+interface GigabitEthernet0/9
+ shutdown
+!
+interface GigabitEthernet0/10
+ shutdown
+!
+interface GigabitEthernet0/11
+ shutdown
+!
+interface GigabitEthernet0/12
+ shutdown
 ```
 
 ### 変更後にしたい内容

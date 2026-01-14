@@ -25,9 +25,9 @@ Cisco Catalyst 2960 スイッチのインターフェース GigabitEthernet 0/1�
    switchport mode trunk
   !
   interface GigabitEthernet0/3
-   switchport trunk encapsulation dot1q
-   switchport trunk allowed vlan 10,20,500
-   switchport mode trunk
+  switchport trunk encapsulation dot1q
+  switchport trunk allowed vlan 10,20,500
+  switchport mode trunk
   !
   ```
 
@@ -57,6 +57,30 @@ interface GigabitEthernet0/2
 interface GigabitEthernet0/3
  switchport access vlan 20
  switchport mode access
+!
+interface GigabitEthernet0/5
+ shutdown
+!
+interface GigabitEthernet0/6
+ shutdown
+!
+interface GigabitEthernet0/7
+ shutdown
+!
+interface GigabitEthernet0/8
+ shutdown
+!
+interface GigabitEthernet0/9
+ shutdown
+!
+interface GigabitEthernet0/10
+ shutdown
+!
+interface GigabitEthernet0/11
+ shutdown
+!
+interface GigabitEthernet0/12
+ shutdown
 ```
 
 **After (設定変更後)**:

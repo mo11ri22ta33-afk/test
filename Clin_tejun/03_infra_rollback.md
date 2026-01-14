@@ -26,8 +26,8 @@ Cisco Catalyst 2960 スイッチの設定変更を元に戻すためのロール
    no switchport trunk allowed vlan 10,20,500
   !
   interface GigabitEthernet0/3
-   switchport access vlan 20
-   switchport mode access
+  switchport access vlan 20
+  switchport mode access
    no switchport trunk encapsulation dot1q
    no switchport trunk allowed vlan 10,20,500
   !
@@ -65,6 +65,30 @@ interface GigabitEthernet0/3
  switchport trunk encapsulation dot1q
  switchport trunk allowed vlan 10,20,500
  switchport mode trunk
+!
+interface GigabitEthernet0/5
+ shutdown
+!
+interface GigabitEthernet0/6
+ shutdown
+!
+interface GigabitEthernet0/7
+ shutdown
+!
+interface GigabitEthernet0/8
+ shutdown
+!
+interface GigabitEthernet0/9
+ shutdown
+!
+interface GigabitEthernet0/10
+ shutdown
+!
+interface GigabitEthernet0/11
+ shutdown
+!
+interface GigabitEthernet0/12
+ shutdown
 ```
 
 **ロールバック後 (変更前状態に戻る)**:

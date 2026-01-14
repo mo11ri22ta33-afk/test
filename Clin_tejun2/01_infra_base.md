@@ -14,8 +14,10 @@
   | VLAN 10: Mgmt     |
   | VLAN 20: Data     |
   |                   |
-  | Gi0/1-12: Access  |
+  | Gi0/1-4: Access   |
   | (VLAN 10/20)      |
+  | Gi0/5-7: Access   |
+  | (VLAN 20)         |
   |                   |
   | Gi0/24: Trunk     |
   | (Dot1Q)           |
@@ -134,13 +136,16 @@ interface GigabitEthernet0/4
  switchport mode access
 !
 interface GigabitEthernet0/5
- shutdown
+ switchport access vlan 20
+ switchport mode access
 !
 interface GigabitEthernet0/6
- shutdown
+ switchport access vlan 20
+ switchport mode access
 !
 interface GigabitEthernet0/7
- shutdown
+ switchport access vlan 20
+ switchport mode access
 !
 interface GigabitEthernet0/8
  shutdown
@@ -178,5 +183,5 @@ interface GigabitEthernet0/24
 - **VLAN 数制限**: Catalyst 2960 は最大 255 個の VLAN をサポート。ただし、メモリや CPU 使用率に注意。
 - **ポート数**: 24 ポートモデルでは、Trunk ポート 1 つ、Access ポート 23 つまで。拡張モジュール使用時はさらに制限あり。
 - **STP 制約**: PVST モード使用時、VLAN ごとに STP インスタンスが生成され、CPU 負荷が増大。
-- **パフォーマンス**: 高トラフィック環境では、ポートバッファやバックプレーン帯域を考慮（2960 は 1Gbps/ポート）。
+- **パフォーマンス**: 高トラフィック環境では、ポートバッファやバックプレーン帯域（1Gbps/ポート）を考慮。
 - **互換性**: VTP Transparent モードのため、他の VTP ドメインとの統合時は注意。
