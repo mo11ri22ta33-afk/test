@@ -19,27 +19,27 @@
 
 以下のコマンドを順次実行してください。エラーが発生した場合、中止してさらなる対応を検討。各ステップのコピペ用コマンドを参照。
 
-1. **Port-channel10 削除**:
+1. **GigabitEthernet 0/23 のチャネル解除**:
 
    ```
    configure terminal
-   no interface Port-channel10
-   ```
-
-2. **GigabitEthernet 0/23 のチャネル解除**:
-
-   ```
    interface GigabitEthernet0/23
    no channel-group 10 mode active
    exit
    ```
 
-3. **GigabitEthernet 0/24 のチャネル解除**:
+2. **GigabitEthernet 0/24 のチャネル解除**:
 
    ```
    interface GigabitEthernet0/24
    no channel-group 10 mode active
    exit
+   ```
+
+3. **Port-channel10 削除**:
+
+   ```
+   no interface Port-channel10
    ```
 
 4. **変更確認**:

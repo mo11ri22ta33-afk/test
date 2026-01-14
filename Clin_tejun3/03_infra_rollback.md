@@ -10,13 +10,13 @@ Cisco Catalyst 2960 スイッチの EtherChannel 設定を元に戻すための�
 - **対象ファイル**: スイッチの running-config（Cisco IOS CLI 経由で変更）
 - **ロールバックコマンド**:
   ```
-  no interface Port-channel10
-  !
   interface GigabitEthernet0/23
    no channel-group 10 mode active
   !
   interface GigabitEthernet0/24
    no channel-group 10 mode active
+  !
+  no interface Port-channel10
   !
   ```
 
