@@ -19,30 +19,30 @@
 
 以下のコマンドを順次実行してください。エラーが発生した場合、中止してロールバックを検討。各ステップのコピペ用コマンドを参照。
 
-1. **GigabitEthernet 0/23 のチャネル設定**:
+1. **Port-channel10 の設定**:
 
    ```
    configure terminal
+   interface Port-channel10
+   switchport trunk encapsulation dot1q
+   switchport trunk allowed vlan 10,20
+   switchport mode trunk
+   exit
+   ```
+
+2. **GigabitEthernet 0/23 のチャネル設定**:
+
+   ```
    interface GigabitEthernet0/23
    channel-group 10 mode active
    exit
    ```
 
-2. **GigabitEthernet 0/24 のチャネル設定**:
+3. **GigabitEthernet 0/24 のチャネル設定**:
 
    ```
    interface GigabitEthernet0/24
    channel-group 10 mode active
-   exit
-   ```
-
-3. **Port-channel10 の設定**:
-
-   ```
-   interface Port-channel10
-   switchport trunk encapsulation dot1q
-   switchport trunk allowed vlan 10,20
-   switchport mode trunk
    exit
    ```
 

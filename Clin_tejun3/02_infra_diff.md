@@ -46,18 +46,22 @@ interface GigabitEthernet0/23
  switchport trunk encapsulation dot1q
  switchport trunk allowed vlan 10,20
  switchport mode trunk
- channel-group 10 mode active
 !
 interface GigabitEthernet0/24
  switchport trunk encapsulation dot1q
  switchport trunk allowed vlan 10,20
  switchport mode trunk
- channel-group 10 mode active
 !
 interface Port-channel10
  switchport trunk encapsulation dot1q
  switchport trunk allowed vlan 10,20
  switchport mode trunk
+!
+interface GigabitEthernet0/23
+ channel-group 10 mode active
+!
+interface GigabitEthernet0/24
+ channel-group 10 mode active
 ```
 
 # 4. 注意点（依存関係・影響範囲）
