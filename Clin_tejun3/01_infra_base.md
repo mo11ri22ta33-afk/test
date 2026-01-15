@@ -86,14 +86,10 @@ interface GigabitEthernet0/12
  shutdown
 !
 interface GigabitEthernet0/23
- switchport trunk encapsulation dot1q
- switchport trunk allowed vlan 10,20
- switchport mode trunk
+ shutdown
 !
 interface GigabitEthernet0/24
- switchport trunk encapsulation dot1q
- switchport trunk allowed vlan 10,20
- switchport mode trunk
+ shutdown
 !
 vtp mode transparent
 !
