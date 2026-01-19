@@ -1,0 +1,109 @@
+{
+  "description": "Expected state after configuration changes based on Clin_tejun/02_infra_execute.md section 3",
+  "commands": {
+    "show_vlan_brief": {
+      "expected_output": {
+        "vlans": [
+          {
+            "id": 10,
+            "name": "Mgmt",
+            "status": "active"
+          },
+          {
+            "id": 20,
+            "name": "Data",
+            "status": "active"
+          },
+          {
+            "id": 500,
+            "name": "Service",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    "show_interface_status": {
+      "expected_output": {
+        "interfaces": {
+          "GigabitEthernet0/1": {
+            "mode": "trunk",
+            "status": "connected"
+          },
+          "GigabitEthernet0/2": {
+            "mode": "trunk",
+            "status": "connected"
+          },
+          "GigabitEthernet0/3": {
+            "mode": "trunk",
+            "status": "connected"
+          },
+          "GigabitEthernet0/23": {
+            "mode": "trunk",
+            "status": "connected"
+          },
+          "GigabitEthernet0/24": {
+            "mode": "trunk",
+            "status": "connected"
+          },
+          "Port-channel1": {
+            "mode": "trunk",
+            "status": "connected"
+          }
+        }
+      }
+    },
+    "show_interface_trunk": {
+      "expected_output": {
+        "trunk_interfaces": {
+          "GigabitEthernet0/1": {
+            "encapsulation": "dot1q",
+            "mode": "on",
+            "status": "trunking",
+            "allowed_vlans": "10,20,500"
+          },
+          "GigabitEthernet0/2": {
+            "encapsulation": "dot1q",
+            "mode": "on",
+            "status": "trunking",
+            "allowed_vlans": "10,20,500"
+          },
+          "GigabitEthernet0/3": {
+            "encapsulation": "dot1q",
+            "mode": "on",
+            "status": "trunking",
+            "allowed_vlans": "10,20,500"
+          },
+          "Port-channel1": {
+            "encapsulation": "dot1q",
+            "mode": "on",
+            "status": "trunking",
+            "allowed_vlans": "10,20,500"
+          }
+        }
+      }
+    },
+    "show_spanning_tree": {
+      "expected_output": {
+        "spanning_tree": {
+          "mode": "pvst",
+          "root_bridge": "not_blocked",
+          "no_loops": true
+        }
+      }
+    },
+    "show_etherchannel_summary": {
+      "expected_output": {
+        "etherchannels": {
+          "Port-channel1": {
+            "status": "U",
+            "protocol": "LACP",
+            "members": {
+              "GigabitEthernet0/23": "P",
+              "GigabitEthernet0/24": "P"
+            }
+          }
+        }
+      }
+    }
+  }
+}

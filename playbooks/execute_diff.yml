@@ -1,0 +1,121 @@
+---
+# Ansible Playbook to execute diff changes with pre-check, apply config, and save
+# Based on Clin_tejun/02_infra_execute.md sections 1 and 2
+
+- hosts: switches
+  gather_facts: no
+  connection: network_cli
+  tasks:
+    # 1. Pre-execution information gathering and backup
+    - name: Gather pre-change running config
+      ios_command:
+        commands: show running-config
+      register: pre_running_config
+
+    - name: Gather pre-change vlan brief
+      ios_command:
+        commands: show vlan brief
+      register: pre_vlan_brief
+
+    - name: Gather pre-change interface status
+      ios_command:
+        commands: show interface status
+      register: pre_interface_status
+
+    - name: Gather pre-change interface trunk
+      ios_command:
+        commands: show interface trunk
+      register: pre_interface_trunk
+
+    - name: Gather pre-change spanning-tree brief
+      ios_command:
+        commands: show spanning-tree brief
+      register: pre_spanning_tree
+
+    - name: Gather pre-change version
+      ios_command:
+        commands: show version
+      register: pre_version
+
+    - name: Save pre-change backups to local files
+      copy:
+        content: "{{ item.content }}"
+        dest: "backup/{{ item.filename }}"
+      loop:
+        - content: "{{ pre_running_config.stdout[0] }}"
+          filename: "pre_running_config.txt"
+        - content: "{{ pre_vlan_brief.stdout[0] }}"
+          filename: "pre_vlan_brief.txt"
+        - content: "{{ pre_interface_status.stdout[0] }}"
+          filename: "pre_interface_status.txt"
+        - content: "{{ pre_interface_trunk.stdout[0] }}"
+          filename: "pre_interface_trunk.txt"
+        - content: "{{ pre_spanning_tree.stdout[0] }}"
+          filename: "pre_spanning_tree.txt"
+        - content: "{{ pre_version.stdout[0] }}"
+          filename: "pre_version.txt"
+      delegate_to: localhost
+
+    # 2. Apply configuration changes
+    - name: Add new VLAN 500 for Service network
+      ios_config:
+        lines:
+          - vlan 500
+          - name Service
+
+    - name: Configure GigabitEthernet0/1 as trunk port and add existing VLAN 10 plus new VLAN 500 to allowed list
+      ios_config:
+        parents: interface GigabitEthernet0/1
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 10
+          - switchport trunk allowed vlan add 500
+
+    - name: Enable GigabitEthernet0/1 interface
+      ios_config:
+        parents: interface GigabitEthernet0/1
+        lines:
+          - no shutdown
+
+    - name: Configure GigabitEthernet0/2 as trunk port and add existing VLAN 10 plus new VLAN 500 to allowed list
+      ios_config:
+        parents: interface GigabitEthernet0/2
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 10
+          - switchport trunk allowed vlan add 500
+
+    - name: Enable GigabitEthernet0/2 interface
+      ios_config:
+        parents: interface GigabitEthernet0/2
+        lines:
+          - no shutdown
+
+    - name: Configure GigabitEthernet0/3 as trunk port and add existing VLAN 20 plus new VLAN 500 to allowed list
+      ios_config:
+        parents: interface GigabitEthernet0/3
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 20
+          - switchport trunk allowed vlan add 500
+
+    - name: Enable GigabitEthernet0/3 interface
+      ios_config:
+        parents: interface GigabitEthernet0/3
+        lines:
+          - no shutdown
+
+    # Optional: Update trunk port Gi0/24
+    - name: Add VLAN 500 to allowed VLANs on GigabitEthernet0/24 trunk port
+      ios_config:
+        parents: interface GigabitEthernet0/24
+        lines:
+          - switchport trunk allowed vlan add 500
+
+    # 3. Save configuration
+    - name: Save running configuration to startup configuration
+      ios_command:
+        commands: copy running-config startup-config

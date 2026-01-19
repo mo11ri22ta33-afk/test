@@ -1,0 +1,95 @@
+---
+# Ansible Playbook for updating config with best practices
+# Based on Clin_tejun/02_infra_diff.md and Clin_tejun/02_infra_execute.md
+
+- hosts: switches
+  gather_facts: no
+  connection: network_cli
+  tasks:
+    # Pre-change backup
+    - name: Gather pre-change running config
+      ios_command:
+        commands: show running-config
+      register: pre_running_config
+
+    - name: Save pre-change running config to local backup
+      copy:
+        content: "{{ pre_running_config.stdout[0] }}"
+        dest: "backup/pre_change_running_config.txt"
+      delegate_to: localhost
+
+    # Apply configuration changes following best practices
+    # Logical interfaces first
+    - name: Add VLAN 500 for Service network
+      ios_config:
+        lines:
+          - vlan 500
+          - name Service
+
+    - name: Configure Port-channel1 (logical interface) for EtherChannel
+      ios_config:
+        parents: interface Port-channel1
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport trunk allowed vlan 10,20,500
+          - switchport mode trunk
+
+    # Physical interfaces - configure trunk settings first
+    - name: Configure GigabitEthernet0/1 trunk settings
+      ios_config:
+        parents: interface GigabitEthernet0/1
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 10
+          - switchport trunk allowed vlan add 500
+
+    - name: Configure GigabitEthernet0/2 trunk settings
+      ios_config:
+        parents: interface GigabitEthernet0/2
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 10
+          - switchport trunk allowed vlan add 500
+
+    - name: Configure GigabitEthernet0/3 trunk settings
+      ios_config:
+        parents: interface GigabitEthernet0/3
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 20
+          - switchport trunk allowed vlan add 500
+
+    - name: Update GigabitEthernet0/24 allowed VLANs (EtherChannel member)
+      ios_config:
+        parents: interface GigabitEthernet0/24
+        lines:
+          - switchport trunk allowed vlan add 500
+
+    # Finally, enable physical interfaces (no shutdown last)
+    - name: Enable GigabitEthernet0/1 interface
+      ios_config:
+        parents: interface GigabitEthernet0/1
+        lines:
+          - no shutdown
+
+    - name: Enable GigabitEthernet0/2 interface
+      ios_config:
+        parents: interface GigabitEthernet0/2
+        lines:
+          - no shutdown
+
+    - name: Enable GigabitEthernet0/3 interface
+      ios_config:
+        parents: interface GigabitEthernet0/3
+        lines:
+          - no shutdown
+
+    # Enable Port-channel (logical interface enable last)
+    - name: Enable Port-channel1 interface
+      ios_config:
+        parents: interface Port-channel1
+        lines:
+          - no shutdown

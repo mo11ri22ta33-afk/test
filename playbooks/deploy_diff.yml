@@ -1,0 +1,58 @@
+---
+# Ansible Playbook to deploy diff changes from Clin_tejun/02_infra_diff.md
+# Uses ios_config module to update Cisco Catalyst 2960 switch configuration
+
+- hosts: switches
+  gather_facts: no
+  connection: network_cli
+  tasks:
+    - name: Add new VLAN 500 for Service network
+      ios_config:
+        lines:
+          - vlan 500
+          - name Service
+
+    - name: Configure GigabitEthernet0/1 as trunk port and add existing VLAN 10 plus new VLAN 500 to allowed list
+      ios_config:
+        parents: interface GigabitEthernet0/1
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 10
+          - switchport trunk allowed vlan add 500
+
+    - name: Enable GigabitEthernet0/1 interface
+      ios_config:
+        parents: interface GigabitEthernet0/1
+        lines:
+          - no shutdown
+
+    - name: Configure GigabitEthernet0/2 as trunk port and add existing VLAN 10 plus new VLAN 500 to allowed list
+      ios_config:
+        parents: interface GigabitEthernet0/2
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 10
+          - switchport trunk allowed vlan add 500
+
+    - name: Enable GigabitEthernet0/2 interface
+      ios_config:
+        parents: interface GigabitEthernet0/2
+        lines:
+          - no shutdown
+
+    - name: Configure GigabitEthernet0/3 as trunk port and add existing VLAN 20 plus new VLAN 500 to allowed list
+      ios_config:
+        parents: interface GigabitEthernet0/3
+        lines:
+          - switchport trunk encapsulation dot1q
+          - switchport mode trunk
+          - switchport trunk allowed vlan add 20
+          - switchport trunk allowed vlan add 500
+
+    - name: Enable GigabitEthernet0/3 interface
+      ios_config:
+        parents: interface GigabitEthernet0/3
+        lines:
+          - no shutdown
