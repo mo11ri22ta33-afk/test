@@ -5,6 +5,17 @@
 - hosts: switches
   gather_facts: no
   connection: network_cli
+  vars:
+    new_vlan:
+      id: 500
+      name: Service
+    trunk_interfaces:
+      - interface: GigabitEthernet0/1
+        allowed_vlans: [10, 500]
+      - interface: GigabitEthernet0/2
+        allowed_vlans: [10, 500]
+      - interface: GigabitEthernet0/3
+        allowed_vlans: [20, 500]
   tasks:
     - name: Add new VLAN 500 for Service network
       ios_config:
