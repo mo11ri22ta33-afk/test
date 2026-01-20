@@ -18,24 +18,15 @@
         dest: "backup/pre_change_running_config.txt"
       delegate_to: localhost
 
-    # Apply configuration changes following best practices
-    # Logical interfaces first
+    # Apply configuration changes based on Clin_tejun/02_infra_diff.md
     - name: Add VLAN 500 for Service network
       ios_config:
         lines:
           - vlan 500
           - name Service
 
-    - name: Configure Port-channel1 (logical interface) for EtherChannel
-      ios_config:
-        parents: interface Port-channel1
-        lines:
-          - switchport trunk encapsulation dot1q
-          - switchport trunk allowed vlan 10,20,500
-          - switchport mode trunk
-
-    # Physical interfaces - configure trunk settings first
-    - name: Configure GigabitEthernet0/1 trunk settings
+    # Configure physical interfaces as trunk ports
+    - name: Configure GigabitEthernet0/1 as trunk port
       ios_config:
         parents: interface GigabitEthernet0/1
         lines:
@@ -44,7 +35,7 @@
           - switchport trunk allowed vlan add 10
           - switchport trunk allowed vlan add 500
 
-    - name: Configure GigabitEthernet0/2 trunk settings
+    - name: Configure GigabitEthernet0/2 as trunk port
       ios_config:
         parents: interface GigabitEthernet0/2
         lines:
@@ -53,7 +44,7 @@
           - switchport trunk allowed vlan add 10
           - switchport trunk allowed vlan add 500
 
-    - name: Configure GigabitEthernet0/3 trunk settings
+    - name: Configure GigabitEthernet0/3 as trunk port
       ios_config:
         parents: interface GigabitEthernet0/3
         lines:
@@ -62,13 +53,14 @@
           - switchport trunk allowed vlan add 20
           - switchport trunk allowed vlan add 500
 
-    - name: Update GigabitEthernet0/24 allowed VLANs (EtherChannel member)
+    # Optional: Update trunk port Gi0/24 allowed VLANs
+    - name: Update GigabitEthernet0/24 allowed VLANs
       ios_config:
         parents: interface GigabitEthernet0/24
         lines:
           - switchport trunk allowed vlan add 500
 
-    # Finally, enable physical interfaces (no shutdown last)
+    # Enable interfaces
     - name: Enable GigabitEthernet0/1 interface
       ios_config:
         parents: interface GigabitEthernet0/1
@@ -84,12 +76,5 @@
     - name: Enable GigabitEthernet0/3 interface
       ios_config:
         parents: interface GigabitEthernet0/3
-        lines:
-          - no shutdown
-
-    # Enable Port-channel (logical interface enable last)
-    - name: Enable Port-channel1 interface
-      ios_config:
-        parents: interface Port-channel1
         lines:
           - no shutdown

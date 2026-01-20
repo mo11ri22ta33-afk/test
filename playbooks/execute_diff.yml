@@ -108,14 +108,50 @@
         lines:
           - no shutdown
 
-    # Optional: Update trunk port Gi0/24
-    - name: Add VLAN 500 to allowed VLANs on GigabitEthernet0/24 trunk port
-      ios_config:
-        parents: interface GigabitEthernet0/24
-        lines:
-          - switchport trunk allowed vlan add 500
+    # 3. Post-execution verification
+    - name: Gather post-change running config
+      ios_command:
+        commands: show running-config
+      register: post_running_config
 
-    # 3. Save configuration
+    - name: Gather post-change vlan brief
+      ios_command:
+        commands: show vlan brief
+      register: post_vlan_brief
+
+    - name: Gather post-change interface status
+      ios_command:
+        commands: show interface status
+      register: post_interface_status
+
+    - name: Gather post-change interface trunk
+      ios_command:
+        commands: show interface trunk
+      register: post_interface_trunk
+
+    - name: Gather post-change spanning-tree brief
+      ios_command:
+        commands: show spanning-tree brief
+      register: post_spanning_tree
+
+    - name: Save post-change backups to local files
+      copy:
+        content: "{{ item.content }}"
+        dest: "backup/{{ item.filename }}"
+      loop:
+        - content: "{{ post_running_config.stdout[0] }}"
+          filename: "post_running_config.txt"
+        - content: "{{ post_vlan_brief.stdout[0] }}"
+          filename: "post_vlan_brief.txt"
+        - content: "{{ post_interface_status.stdout[0] }}"
+          filename: "post_interface_status.txt"
+        - content: "{{ post_interface_trunk.stdout[0] }}"
+          filename: "post_interface_trunk.txt"
+        - content: "{{ post_spanning_tree.stdout[0] }}"
+          filename: "post_spanning_tree.txt"
+      delegate_to: localhost
+
+    # 4. Save configuration
     - name: Save running configuration to startup configuration
       ios_command:
         commands: copy running-config startup-config
